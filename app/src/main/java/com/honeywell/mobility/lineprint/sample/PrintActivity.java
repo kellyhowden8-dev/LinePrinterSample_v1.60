@@ -25,7 +25,6 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.ImageView;
 import java.io.*;
-import java.lang.*;
 import java.util.Random;
 
 import android.view.inputmethod.InputMethodManager;
