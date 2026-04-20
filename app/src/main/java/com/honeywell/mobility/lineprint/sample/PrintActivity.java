@@ -6,8 +6,11 @@ import com.honeywell.mobility.print.PrintProgressEvent;
 import com.honeywell.mobility.print.PrintProgressListener;
 import com.honeywell.mobility.print.PrinterException;
 
+import android.Manifest;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.app.Activity;
 import android.content.Intent;
@@ -25,7 +28,6 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.ImageView;
 import java.io.*;
-import java.lang.*;
 import java.util.Random;
 
 import android.view.inputmethod.InputMethodManager;
@@ -70,6 +72,12 @@ public class PrintActivity extends Activity {
 
 
 	public static final int CAPTURE_SIGNATURE_ACTIVITY = 1;
+	private static final int REQUEST_BLUETOOTH_PERMISSIONS = 2;
+	private static final String[] BLUETOOTH_RUNTIME_PERMISSIONS = new String[] {
+			Manifest.permission.BLUETOOTH_CONNECT,
+			Manifest.permission.BLUETOOTH_SCAN
+	};
+	private String[] pendingPrintArgs;
 
 
 
@@ -132,21 +140,27 @@ public class PrintActivity extends Activity {
 			{
 				inputManager.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(),InputMethodManager.HIDE_NOT_ALWAYS);
 
-				// Create a PrintTask to do printing on a separate thread.
-				PrintTask task = new PrintTask();
+				String sNumCopies = numberOfCopies.getText().toString().replaceAll("[\\D]","");
+				String sNumAdditionalLines=numberOfAditionalLines.getText().toString().replaceAll("[\\D]","");
+				String sDelayBetweenCopies = delayBetweenCopies.getText().toString().replaceAll("[\\D]","");
+				String sUserText = editUserText.getText().toString();
+				String[] args = new String[] {
+						editPrinterID.getText().toString(),
+						editMacAddr.getText().toString(),
+						sNumCopies,
+						sNumAdditionalLines,
+						sDelayBetweenCopies,
+						sUserText};
 
-				// Executes PrintTask with the specified parameter which is passed
-				// to the PrintTask.doInBackground method.
-                String sNumCopies = numberOfCopies.getText().toString().replaceAll("[\\D]","");
-                String sNumAdditionalLines=numberOfAditionalLines.getText().toString().replaceAll("[\\D]","");
-                String sDelayBetweenCopies = delayBetweenCopies.getText().toString().replaceAll("[\\D]","");
-                String sUserText = editUserText.getText().toString();
-				task.execute(editPrinterID.getText().toString(),
-                        editMacAddr.getText().toString(),
-                        sNumCopies,
-                        sNumAdditionalLines,
-                        sDelayBetweenCopies,
-                        sUserText);
+				if (hasBluetoothPermissions())
+				{
+					startPrintTask(args);
+				}
+				else
+				{
+					pendingPrintArgs = args;
+					requestPermissions(BLUETOOTH_RUNTIME_PERMISSIONS, REQUEST_BLUETOOTH_PERMISSIONS);
+				}
 			}
 		});
 
@@ -163,6 +177,60 @@ public class PrintActivity extends Activity {
 
 	}
 
+
+	private boolean hasBluetoothPermissions()
+	{
+		// BLUETOOTH_CONNECT / BLUETOOTH_SCAN are dangerous runtime permissions only
+		// on Android 12+ (API 31). On earlier versions the legacy BLUETOOTH /
+		// BLUETOOTH_ADMIN permissions are granted at install time.
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
+		{
+			return true;
+		}
+		for (String permission : BLUETOOTH_RUNTIME_PERMISSIONS)
+		{
+			if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void startPrintTask(String[] args)
+	{
+		PrintTask task = new PrintTask();
+		task.execute(args);
+	}
+
+	@Override
+	public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults)
+	{
+		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+		if (requestCode != REQUEST_BLUETOOTH_PERMISSIONS)
+		{
+			return;
+		}
+		boolean granted = grantResults.length > 0;
+		for (int result : grantResults)
+		{
+			if (result != PackageManager.PERMISSION_GRANTED)
+			{
+				granted = false;
+				break;
+			}
+		}
+		String[] args = pendingPrintArgs;
+		pendingPrintArgs = null;
+		if (granted && args != null)
+		{
+			startPrintTask(args);
+		}
+		else
+		{
+			textMsg.append("\nBluetooth permissions are required to connect to the printer.\n");
+		}
+	}
 
 	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
